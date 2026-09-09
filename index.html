@@ -130,7 +130,7 @@
 
   .search-results{
     background:var(--surface-2); border:1px solid var(--border-strong);
-    border-radius:var(--radius-sm); max-height:200px; overflow-y:auto;
+    border-radius:var(--radius-sm); max-height:220px; overflow-y:auto;
     margin-top:4px; display:none; position:relative; z-index:10;
   }
   .search-item{
@@ -316,7 +316,6 @@
 
 <script>
 const TMDB_API_KEY = "3fd2be6f0c70a2a598f084dd1fb0fe19";
-const OMDB_API_KEY = "trilogy";
 
 const CATS = [
   {n:"Film", c:"#ff8fa3"}, {n:"Dizi", c:"#8fb8ff"}, {n:"Anime", c:"#7fe0c0"},
@@ -349,14 +348,14 @@ let filters = { cats: new Set(), genres: new Set(), status: new Set(), prio: new
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
-// Metinleri normalize etme (Boşlukları ve özel karakterleri silip küçük harfe çevirir)
+// MÜKERRER KONTROLÜ İÇİN METİN TEMİZLEME
 function normalizeString(str) {
   if (!str) return '';
   return str
     .toString()
     .trim()
     .toLowerCase()
-    .replace(/[\s\-_:;.,'"!@#$%^&*()]/g, ''); // Tüm boşluk ve noktalama işaretlerini siler
+    .replace(/[\s\-_:;.,'"!@#$%^&*()]/g, '');
 }
 
 function showToast(msg){
@@ -495,19 +494,9 @@ const searchResults = document.getElementById('searchResults');
 const posterInput = document.getElementById('f_poster_url');
 let searchTimeout = null;
 
+// DOĞRUDAN TMDB ODAKLI OTOMATİK AFİŞ BULUCU
 async function autoFetchPoster(queryName) {
   if (!queryName || queryName.length < 2) return '';
-
-  try {
-    const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(queryName)}&limit=1`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.results && data.results.length > 0 && data.results[0].artworkUrl100) {
-        return data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-      }
-    }
-  } catch (err) {}
-
   try {
     const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(queryName)}`);
     if (res.ok) {
@@ -516,23 +505,6 @@ async function autoFetchPoster(queryName) {
       if (match && match.poster_path) return `https://image.tmdb.org/t/p/w500${match.poster_path}`;
     }
   } catch (err) {}
-
-  try {
-    const res = await fetch(`https://tr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(queryName)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.thumbnail && data.thumbnail.source) return data.thumbnail.source;
-    }
-  } catch (err) {}
-
-  try {
-    const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(queryName)}&apikey=${OMDB_API_KEY}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.Poster && data.Poster !== 'N/A') return data.Poster;
-    }
-  } catch (err) {}
-
   return '';
 }
 
@@ -545,6 +517,7 @@ document.getElementById('googleSearchBtn').addEventListener('click', () => {
   window.open(`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query + ' poster afiş')}`, '_blank');
 });
 
+// DOĞRUDAN TMDB CANLI ARAMA BÖLÜMÜ
 isimInput.addEventListener('input', () => {
   clearTimeout(searchTimeout);
   const query = isimInput.value.trim();
@@ -556,20 +529,24 @@ isimInput.addEventListener('input', () => {
 
   searchTimeout = setTimeout(async () => {
     try {
-      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=5`);
+      const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(query)}`);
       if (!res.ok) return;
       const data = await res.json();
       
       if (data.results && data.results.length > 0) {
-        searchResults.innerHTML = data.results.map(item => {
-          const title = item.trackName || item.collectionName;
-          if(!title) return '';
-          const year = (item.releaseDate || '').substring(0, 4);
-          const poster = item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '300x300bb') : '';
+        const items = data.results.filter(x => x.title || x.name).slice(0, 6);
+        
+        searchResults.innerHTML = items.map(item => {
+          const title = item.title || item.name;
+          const date = item.release_date || item.first_air_date || '';
+          const year = date ? `(${date.substring(0, 4)})` : '';
+          const poster = item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : '';
+          const fullPoster = item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '';
+          
           return `
-            <div class="search-item" data-title="${escapeAttr(title)}" data-poster="${poster}">
+            <div class="search-item" data-title="${escapeAttr(title)}" data-poster="${fullPoster}">
               ${poster ? `<img src="${poster}" alt="">` : '<div style="width:32px;height:48px;background:#333;border-radius:4px;"></div>'}
-              <div><b>${escapeHtml(title)}</b> ${year ? `(${year})` : ''}</div>
+              <div><b>${escapeHtml(title)}</b> ${year}</div>
             </div>
           `;
         }).join('');
@@ -651,10 +628,9 @@ document.getElementById('entryForm').addEventListener('submit', async e => {
   const oncelik = document.getElementById('f_oncelik').value;
   const isim = document.getElementById('f_isim').value.trim();
 
-  // MÜKERRER KAYIT KONTROLÜ
+  // MÜKERRER KAYIT UYARISI
   const normalizedNewName = normalizeString(isim);
   const exists = entries.some(x => {
-    // Düzenleme modundaysak kendi ID'sini es geç
     if (editingId && x.id === editingId) return false;
     return normalizeString(x.isim) === normalizedNewName;
   });
