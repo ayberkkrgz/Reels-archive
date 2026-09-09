@@ -195,6 +195,7 @@
     position:fixed; left:50%; bottom:calc(90px + env(safe-area-inset-bottom)); transform:translateX(-50%);
     background:var(--surface-2); border:1px solid var(--border-strong); color:var(--text);
     padding:10px 16px; border-radius:999px; font-size:13px; z-index:60; display:none;
+    box-shadow:0 10px 25px rgba(0,0,0,0.5); text-align:center;
   }
   .toast.show{display:block;}
   .empty{text-align:center; padding:70px 30px 30px; color:var(--text-muted);}
@@ -348,11 +349,21 @@ let filters = { cats: new Set(), genres: new Set(), status: new Set(), prio: new
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
+// Metinleri normalize etme (Boşlukları ve özel karakterleri silip küçük harfe çevirir)
+function normalizeString(str) {
+  if (!str) return '';
+  return str
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-_:;.,'"!@#$%^&*()]/g, ''); // Tüm boşluk ve noktalama işaretlerini siler
+}
+
 function showToast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2200);
+  setTimeout(() => t.classList.remove('show'), 2600);
 }
 
 function loadEntries(){
@@ -479,7 +490,6 @@ genreSel.addEventListener('change', () => {
   document.getElementById('customTurGroup').style.display = genreSel.value === '__CUSTOM__' ? 'block' : 'none';
 });
 
-// 4 Katmanlı Akıllı Afiş Arama Servisi (iTunes -> TMDB -> Wikipedia -> OMDb)
 const isimInput = document.getElementById('f_isim');
 const searchResults = document.getElementById('searchResults');
 const posterInput = document.getElementById('f_poster_url');
@@ -488,7 +498,6 @@ let searchTimeout = null;
 async function autoFetchPoster(queryName) {
   if (!queryName || queryName.length < 2) return '';
 
-  // 1. iTunes API
   try {
     const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(queryName)}&limit=1`);
     if (res.ok) {
@@ -499,7 +508,6 @@ async function autoFetchPoster(queryName) {
     }
   } catch (err) {}
 
-  // 2. TMDB API
   try {
     const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(queryName)}`);
     if (res.ok) {
@@ -509,7 +517,6 @@ async function autoFetchPoster(queryName) {
     }
   } catch (err) {}
 
-  // 3. WIKIPEDIA API (Sınırsız Türkçe/Global Afiş Servisi)
   try {
     const res = await fetch(`https://tr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(queryName)}`);
     if (res.ok) {
@@ -518,7 +525,6 @@ async function autoFetchPoster(queryName) {
     }
   } catch (err) {}
 
-  // 4. OMDb API
   try {
     const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(queryName)}&apikey=${OMDB_API_KEY}`);
     if (res.ok) {
@@ -530,7 +536,6 @@ async function autoFetchPoster(queryName) {
   return '';
 }
 
-// Google Görsellerde Tek Tıkla Arama Butonu
 document.getElementById('googleSearchBtn').addEventListener('click', () => {
   const query = isimInput.value.trim();
   if (!query) {
@@ -645,6 +650,19 @@ document.getElementById('entryForm').addEventListener('submit', async e => {
   const durum = document.getElementById('f_durum').value;
   const oncelik = document.getElementById('f_oncelik').value;
   const isim = document.getElementById('f_isim').value.trim();
+
+  // MÜKERRER KAYIT KONTROLÜ
+  const normalizedNewName = normalizeString(isim);
+  const exists = entries.some(x => {
+    // Düzenleme modundaysak kendi ID'sini es geç
+    if (editingId && x.id === editingId) return false;
+    return normalizeString(x.isim) === normalizedNewName;
+  });
+
+  if (exists) {
+    showToast(`⚠️ "${isim}" zaten listenizde ekli!`);
+    return;
+  }
 
   let finalTur = genreSel.value;
   if(finalTur === '__CUSTOM__'){
