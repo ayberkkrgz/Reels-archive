@@ -38,7 +38,6 @@
   }
   ::selection{background:var(--accent); color:#14141a;}
 
-  /* ---------- header ---------- */
   header{
     position:sticky; top:0; z-index:20;
     background:rgba(20,20,26,.92);
@@ -72,7 +71,6 @@
   }
   .stat-pill b{color:var(--text); font-weight:600;}
 
-  /* ---------- filter bar ---------- */
   .toolbar{
     display:flex; gap:8px; padding:12px 16px 4px;
     align-items:center;
@@ -91,7 +89,6 @@
   }
   .result-count{font-size:12.5px; color:var(--text-muted); margin-left:auto;}
 
-  /* ---------- list & cards ---------- */
   #list{padding:8px 16px 16px; display:flex; flex-direction:column; gap:12px;}
   .card{
     position:relative;
@@ -107,6 +104,7 @@
   .card-poster{
     width:70px; height:105px; border-radius:8px; background-size:cover; 
     background-position:center; flex:none; background-color:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:20px;
   }
   .card-content{flex:1; display:flex; flex-direction:column;}
   .card:active{background:var(--surface-2);}
@@ -130,20 +128,18 @@
     color:var(--text); text-decoration:none; font-size:13px; flex:none;
   }
 
-  /* ---------- search dropdown ---------- */
   .search-results{
     background:var(--surface-2); border:1px solid var(--border-strong);
-    border-radius:var(--radius-sm); max-height:180px; overflow-y:auto;
-    margin-top:4px; display:none;
+    border-radius:var(--radius-sm); max-height:200px; overflow-y:auto;
+    margin-top:4px; display:none; position:relative; z-index:10;
   }
   .search-item{
     padding:8px 12px; font-size:13px; display:flex; align-items:center; gap:10px; cursor:pointer;
     border-bottom:1px solid var(--border);
   }
   .search-item:last-child{border-bottom:none;}
-  .search-item img{width:30px; height:45px; object-fit:cover; border-radius:4px;}
+  .search-item img{width:32px; height:48px; object-fit:cover; border-radius:4px; background:var(--surface);}
 
-  /* ---------- fab & modals ---------- */
   .fab{
     position:fixed; right:18px; bottom:calc(20px + env(safe-area-inset-bottom));
     width:56px; height:56px; border-radius:50%;
@@ -212,7 +208,6 @@
 
 <button class="fab" id="addBtn" aria-label="Yeni kayıt ekle">+</button>
 
-<!-- Add/Edit sheet -->
 <div class="overlay" id="formOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
@@ -223,11 +218,14 @@
         <select id="f_kategori" required></select>
       </div>
       <div class="field">
-        <label for="f_isim">İsim (Film, Dizi Arama)</label>
-        <input type="text" id="f_isim" placeholder="Film/Dizi adı yazın..." required autocomplete="off">
+        <label for="f_isim">İsim (Film/Dizi Arama)</label>
+        <input type="text" id="f_isim" placeholder="Film veya dizi adı yazın..." required autocomplete="off">
         <div class="search-results" id="searchResults"></div>
       </div>
-      <input type="hidden" id="f_poster_url">
+      <div class="field">
+        <label for="f_poster_url">Afiş / Görsel URL (İsteğe Bağlı)</label>
+        <input type="url" id="f_poster_url" placeholder="https://... (Görsel bağlantısı)">
+      </div>
       <div class="field">
         <label for="f_tur_select">Tür</label>
         <select id="f_tur_select"></select>
@@ -268,7 +266,6 @@
   </div>
 </div>
 
-<!-- Filter sheet -->
 <div class="overlay" id="filterOverlay">
   <div class="sheet">
     <div class="sheet-handle"></div>
@@ -306,7 +303,6 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// Entegre edilen TMDB API Key:
 const TMDB_API_KEY = "E9ae1c8fb14b06d06db83be3384ac22a";
 
 const CATS = [
@@ -418,11 +414,11 @@ function render(){
     const st = byName(STATUSES, e.durum);
     const prioFlag = e.oncelik === 'Yüksek' ? '<span class="prio-flag">🔥</span>' : '';
     const posterStyle = e.posterUrl ? `style="background-image:url('${e.posterUrl}')"` : '';
-    const watchLink = `https://www.google.com/search?q=${encodeURIComponent(e.isim + ' nereden izlenir izle')}`;
+    const watchLink = `https://www.justwatch.com/tr/arama?q=${encodeURIComponent(e.isim)}`;
 
     return `
     <div class="card" style="--card-accent:${st.c}" data-id="${e.id}">
-      ${e.posterUrl ? `<div class="card-poster" ${posterStyle}></div>` : ''}
+      <div class="card-poster" ${posterStyle}>${!e.posterUrl ? '🎬' : ''}</div>
       <div class="card-content">
         <div class="card-top">
           <span class="tag"><span class="swatch" style="background:${cat.c}"></span>${e.kategori}${e.tur ? ' · '+e.tur : ''}</span>
@@ -435,7 +431,7 @@ function render(){
         <div class="card-bottom">
           <span class="status-badge"><span class="swatch" style="background:${st.c}"></span>${e.durum}</span>
           <div class="action-btns">
-            <a class="link-btn" title="Nereden İzlenir?" href="${watchLink}" target="_blank" onclick="event.stopPropagation()">🔍</a>
+            <a class="link-btn" title="Hangi Platformda Var? (JustWatch)" href="${watchLink}" target="_blank" onclick="event.stopPropagation()">🔍</a>
             ${e.link ? `<a class="link-btn" title="Reels Linki" href="${escapeAttr(e.link)}" target="_blank" onclick="event.stopPropagation()">↗</a>` : ''}
           </div>
         </div>
@@ -471,46 +467,53 @@ genreSel.addEventListener('change', () => {
   document.getElementById('customTurGroup').style.display = genreSel.value === '__CUSTOM__' ? 'block' : 'none';
 });
 
-// TMDB Arama Entegrasyonu
+// Güçlendirilmiş TMDB Arama
 const isimInput = document.getElementById('f_isim');
 const searchResults = document.getElementById('searchResults');
+let searchTimeout = null;
 
-isimInput.addEventListener('input', async () => {
+isimInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
   const query = isimInput.value.trim();
+  
   if (query.length < 2) {
     searchResults.style.display = 'none';
     return;
   }
 
-  try {
-    const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(query)}`);
-    const data = await res.json();
-    
-    if (data.results && data.results.length > 0) {
-      searchResults.innerHTML = data.results.slice(0, 5).map(item => {
-        const title = item.title || item.name;
-        const year = (item.release_date || item.first_air_date || '').substring(0, 4);
-        const poster = item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : '';
-        return `
-          <div class="search-item" data-title="${escapeAttr(title)}" data-poster="${poster}">
-            ${poster ? `<img src="${poster}">` : ''}
-            <div><b>${escapeHtml(title)}</b> ${year ? `(${year})` : ''}</div>
-          </div>
-        `;
-      }).join('');
-      searchResults.style.display = 'block';
+  searchTimeout = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      
+      if (data.results && data.results.length > 0) {
+        searchResults.innerHTML = data.results.slice(0, 5).map(item => {
+          const title = item.title || item.name;
+          if(!title) return '';
+          const year = (item.release_date || item.first_air_date || '').substring(0, 4);
+          const poster = item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : '';
+          return `
+            <div class="search-item" data-title="${escapeAttr(title)}" data-poster="${poster}">
+              ${poster ? `<img src="${poster}" alt="">` : '<div style="width:32px;height:48px;background:#333;border-radius:4px;"></div>'}
+              <div><b>${escapeHtml(title)}</b> ${year ? `(${year})` : ''}</div>
+            </div>
+          `;
+        }).join('');
+        searchResults.style.display = 'block';
 
-      searchResults.querySelectorAll('.search-item').forEach(el => {
-        el.addEventListener('click', () => {
-          isimInput.value = el.dataset.title;
-          document.getElementById('f_poster_url').value = el.dataset.poster;
-          searchResults.style.display = 'none';
+        searchResults.querySelectorAll('.search-item').forEach(el => {
+          el.addEventListener('click', () => {
+            isimInput.value = el.dataset.title;
+            document.getElementById('f_poster_url').value = el.dataset.poster;
+            searchResults.style.display = 'none';
+          });
         });
-      });
-    } else {
-      searchResults.style.display = 'none';
-    }
-  } catch (err) { searchResults.style.display = 'none'; }
+      } else {
+        searchResults.style.display = 'none';
+      }
+    } catch (err) { searchResults.style.display = 'none'; }
+  }, 300);
 });
 
 const puanInput = document.getElementById('f_puan');
@@ -573,7 +576,7 @@ document.getElementById('entryForm').addEventListener('submit', async e => {
   const data = {
     kategori,
     isim,
-    posterUrl: document.getElementById('f_poster_url').value,
+    posterUrl: document.getElementById('f_poster_url').value.trim(),
     tur: finalTur,
     link: document.getElementById('f_link').value.trim(),
     durum,
@@ -601,7 +604,6 @@ document.getElementById('deleteBtn').addEventListener('click', () => {
   render();
 });
 
-// Filtre Alanları
 function buildFilterChips(){
   const mk = (container, items, set) => {
     container.innerHTML = items.map(i => {
