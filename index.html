@@ -223,8 +223,8 @@
         <div class="search-results" id="searchResults"></div>
       </div>
       <div class="field">
-        <label for="f_poster_url">Afiş URL (İsteyenler İçin Elle Girilebilir)</label>
-        <input type="url" id="f_poster_url" placeholder="Afiş otomatik çekilir, değiştirilebilir...">
+        <label for="f_poster_url">Afiş URL (Otomatik Dolar)</label>
+        <input type="url" id="f_poster_url" placeholder="Görsel bağlantısı otomatik çekilir...">
       </div>
       <div class="field">
         <label for="f_tur_select">Tür</label>
@@ -303,8 +303,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// Güncel ve Doğrulanmış TMDB API Key
 const TMDB_API_KEY = "3fd2be6f0c70a2a598f084dd1fb0fe19";
+const OMDB_API_KEY = "trilogy"; // Yedek servis anahtarı
 
 const CATS = [
   {n:"Film", c:"#ff8fa3"}, {n:"Dizi", c:"#8fb8ff"}, {n:"Anime", c:"#7fe0c0"},
@@ -468,7 +468,7 @@ genreSel.addEventListener('change', () => {
   document.getElementById('customTurGroup').style.display = genreSel.value === '__CUSTOM__' ? 'block' : 'none';
 });
 
-// Gelişmiş TMDB Otomatik Afiş Arama & Çekme
+// Üçlü Otomatik Afiş Servisi (TMDB -> iTunes -> OMDb)
 const isimInput = document.getElementById('f_isim');
 const searchResults = document.getElementById('searchResults');
 const posterInput = document.getElementById('f_poster_url');
@@ -476,17 +476,37 @@ let searchTimeout = null;
 
 async function autoFetchPoster(queryName) {
   if (!queryName || queryName.length < 2) return '';
+
+  // 1. DENE: TMDB
   try {
     const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(queryName)}`);
-    if (!res.ok) return '';
-    const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      const match = data.results.find(x => x.poster_path) || data.results[0];
-      if (match && match.poster_path) {
-        return `https://image.tmdb.org/t/p/w500${match.poster_path}`;
+    if (res.ok) {
+      const data = await res.json();
+      const match = data.results && data.results.find(x => x.poster_path);
+      if (match && match.poster_path) return `https://image.tmdb.org/t/p/w500${match.poster_path}`;
+    }
+  } catch (err) {}
+
+  // 2. DENE: iTunes API (Kesinlikle kısıtlamasız servis)
+  try {
+    const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(queryName)}&entity=movie&limit=1`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.results && data.results.length > 0 && data.results[0].artworkUrl100) {
+        return data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
       }
     }
-  } catch (err) { return ''; }
+  } catch (err) {}
+
+  // 3. DENE: OMDb API
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(queryName)}&apikey=${OMDB_API_KEY}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.Poster && data.Poster !== 'N/A') return data.Poster;
+    }
+  } catch (err) {}
+
   return '';
 }
 
@@ -501,16 +521,16 @@ isimInput.addEventListener('input', () => {
 
   searchTimeout = setTimeout(async () => {
     try {
-      const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(query)}`);
+      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=movie&limit=5`);
       if (!res.ok) return;
       const data = await res.json();
       
       if (data.results && data.results.length > 0) {
-        searchResults.innerHTML = data.results.slice(0, 5).map(item => {
-          const title = item.title || item.name;
+        searchResults.innerHTML = data.results.map(item => {
+          const title = item.trackName;
           if(!title) return '';
-          const year = (item.release_date || item.first_air_date || '').substring(0, 4);
-          const poster = item.poster_path ? `https://image.tmdb.org/t/p/w185${item.poster_path}` : '';
+          const year = (item.releaseDate || '').substring(0, 4);
+          const poster = item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '300x300bb') : '';
           return `
             <div class="search-item" data-title="${escapeAttr(title)}" data-poster="${poster}">
               ${poster ? `<img src="${poster}" alt="">` : '<div style="width:32px;height:48px;background:#333;border-radius:4px;"></div>'}
@@ -523,9 +543,7 @@ isimInput.addEventListener('input', () => {
         searchResults.querySelectorAll('.search-item').forEach(el => {
           el.addEventListener('click', () => {
             isimInput.value = el.dataset.title;
-            if (el.dataset.poster) {
-              posterInput.value = el.dataset.poster.replace('/w185/', '/w500/');
-            }
+            if (el.dataset.poster) posterInput.value = el.dataset.poster;
             searchResults.style.display = 'none';
           });
         });
@@ -536,7 +554,6 @@ isimInput.addEventListener('input', () => {
   }, 300);
 });
 
-// İsim alanından çıkıldığında otomatik afiş doldurma
 isimInput.addEventListener('blur', async () => {
   setTimeout(async () => {
     searchResults.style.display = 'none';
@@ -605,7 +622,6 @@ document.getElementById('entryForm').addEventListener('submit', async e => {
   }
 
   let finalPosterUrl = posterInput.value.trim();
-  // Kullanıcı görsel seçmediyse kaydederken otomatik sorgula
   if (!finalPosterUrl && isim) {
     finalPosterUrl = await autoFetchPoster(isim);
   }
