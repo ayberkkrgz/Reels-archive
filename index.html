@@ -219,12 +219,12 @@
       </div>
       <div class="field">
         <label for="f_isim">İsim (Film/Dizi Arama)</label>
-        <input type="text" id="f_isim" placeholder="Film veya dizi adı yazın..." required autocomplete="off">
+        <input type="text" id="f_isim" placeholder="Film veya dizi adı..." required autocomplete="off">
         <div class="search-results" id="searchResults"></div>
       </div>
       <div class="field">
-        <label for="f_poster_url">Afiş / Görsel URL (İsteğe Bağlı)</label>
-        <input type="url" id="f_poster_url" placeholder="https://... (Görsel bağlantısı)">
+        <label for="f_poster_url">Afiş URL (İsteyenler İçin Elle Girilebilir)</label>
+        <input type="url" id="f_poster_url" placeholder="Afiş otomatik çekilir, değiştirilebilir...">
       </div>
       <div class="field">
         <label for="f_tur_select">Tür</label>
@@ -303,7 +303,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const TMDB_API_KEY = "E9ae1c8fb14b06d06db83be3384ac22a";
+// Güncel ve Doğrulanmış TMDB API Key
+const TMDB_API_KEY = "3fd2be6f0c70a2a598f084dd1fb0fe19";
 
 const CATS = [
   {n:"Film", c:"#ff8fa3"}, {n:"Dizi", c:"#8fb8ff"}, {n:"Anime", c:"#7fe0c0"},
@@ -467,10 +468,27 @@ genreSel.addEventListener('change', () => {
   document.getElementById('customTurGroup').style.display = genreSel.value === '__CUSTOM__' ? 'block' : 'none';
 });
 
-// Güçlendirilmiş TMDB Arama
+// Gelişmiş TMDB Otomatik Afiş Arama & Çekme
 const isimInput = document.getElementById('f_isim');
 const searchResults = document.getElementById('searchResults');
+const posterInput = document.getElementById('f_poster_url');
 let searchTimeout = null;
+
+async function autoFetchPoster(queryName) {
+  if (!queryName || queryName.length < 2) return '';
+  try {
+    const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(queryName)}`);
+    if (!res.ok) return '';
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+      const match = data.results.find(x => x.poster_path) || data.results[0];
+      if (match && match.poster_path) {
+        return `https://image.tmdb.org/t/p/w500${match.poster_path}`;
+      }
+    }
+  } catch (err) { return ''; }
+  return '';
+}
 
 isimInput.addEventListener('input', () => {
   clearTimeout(searchTimeout);
@@ -484,7 +502,7 @@ isimInput.addEventListener('input', () => {
   searchTimeout = setTimeout(async () => {
     try {
       const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(query)}`);
-      if (!res.ok) throw new Error();
+      if (!res.ok) return;
       const data = await res.json();
       
       if (data.results && data.results.length > 0) {
@@ -505,7 +523,9 @@ isimInput.addEventListener('input', () => {
         searchResults.querySelectorAll('.search-item').forEach(el => {
           el.addEventListener('click', () => {
             isimInput.value = el.dataset.title;
-            document.getElementById('f_poster_url').value = el.dataset.poster;
+            if (el.dataset.poster) {
+              posterInput.value = el.dataset.poster.replace('/w185/', '/w500/');
+            }
             searchResults.style.display = 'none';
           });
         });
@@ -516,6 +536,17 @@ isimInput.addEventListener('input', () => {
   }, 300);
 });
 
+// İsim alanından çıkıldığında otomatik afiş doldurma
+isimInput.addEventListener('blur', async () => {
+  setTimeout(async () => {
+    searchResults.style.display = 'none';
+    if (isimInput.value.trim() && !posterInput.value.trim()) {
+      const fetchedPoster = await autoFetchPoster(isimInput.value.trim());
+      if (fetchedPoster) posterInput.value = fetchedPoster;
+    }
+  }, 200);
+});
+
 const puanInput = document.getElementById('f_puan');
 const puanVal = document.getElementById('f_puanVal');
 puanInput.addEventListener('input', () => puanVal.textContent = `⭐ ${puanInput.value}`);
@@ -524,7 +555,7 @@ function openForm(id){
   editingId = id || null;
   const form = document.getElementById('entryForm');
   form.reset();
-  document.getElementById('f_poster_url').value = '';
+  posterInput.value = '';
   document.getElementById('customTurGroup').style.display = 'none';
   searchResults.style.display = 'none';
   document.getElementById('deleteBtn').style.display = editingId ? 'block' : 'none';
@@ -534,7 +565,7 @@ function openForm(id){
     const e = entries.find(x => x.id === editingId);
     document.getElementById('f_kategori').value = e.kategori || '';
     document.getElementById('f_isim').value = e.isim || '';
-    document.getElementById('f_poster_url').value = e.posterUrl || '';
+    posterInput.value = e.posterUrl || '';
     
     if(e.tur && GENRES.includes(e.tur)){
       genreSel.value = e.tur;
@@ -573,10 +604,16 @@ document.getElementById('entryForm').addEventListener('submit', async e => {
     finalTur = document.getElementById('f_tur_custom').value.trim();
   }
 
+  let finalPosterUrl = posterInput.value.trim();
+  // Kullanıcı görsel seçmediyse kaydederken otomatik sorgula
+  if (!finalPosterUrl && isim) {
+    finalPosterUrl = await autoFetchPoster(isim);
+  }
+
   const data = {
     kategori,
     isim,
-    posterUrl: document.getElementById('f_poster_url').value.trim(),
+    posterUrl: finalPosterUrl,
     tur: finalTur,
     link: document.getElementById('f_link').value.trim(),
     durum,
