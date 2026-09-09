@@ -171,7 +171,7 @@
   .field input:focus, .field select:focus, .field textarea:focus{outline:2px solid var(--accent); outline-offset:1px;}
   .range-row{display:flex; align-items:center; gap:12px;}
   .range-row input[type=range]{flex:1; accent-color:var(--accent-2);}
-  .range-val{font-family:var(--font-display); font-weight:700; font-size:16px; min-width:52px; text-align:right; color:var(--accent-2);}
+  .range-val{font-family:var(--font-display); font-weight:700; font-size:16px; min-width:65px; text-align:right; color:var(--accent-2);}
   .chip-group{display:flex; flex-wrap:wrap; gap:8px;}
   .chip{
     border:1px solid var(--border); border-radius:999px; padding:7px 12px;
@@ -224,15 +224,19 @@
         <select id="f_kategori" required></select>
       </div>
       <div class="field">
-        <label for="f_tur">Tür</label>
-        <input type="text" id="f_tur" placeholder="örn. Aksiyon, Kurgu, Komedi...">
+        <label for="f_isim">İsim (Film, Dizi, Kitap vb.)</label>
+        <input type="text" id="f_isim" placeholder="örn. Interstellar, Breaking Bad, Dune..." required>
       </div>
       <div class="field">
-        <label for="f_baslik">Başlık</label>
-        <input type="text" id="f_baslik" placeholder="örn. Attack on Titan - final sahne">
+        <label for="f_tur_select">Tür</label>
+        <select id="f_tur_select"></select>
+      </div>
+      <div class="field" id="customTurGroup" style="display:none;">
+        <label for="f_tur_custom">Özel Tür Yazın</label>
+        <input type="text" id="f_tur_custom" placeholder="örn. Cyberpunk, Psychological Thriller...">
       </div>
       <div class="field">
-        <label for="f_link">Instagram linki</label>
+        <label for="f_link">Instagram / Reels Linki</label>
         <input type="url" id="f_link" placeholder="https://www.instagram.com/reel/...">
       </div>
       <div class="field">
@@ -273,12 +277,23 @@
       <div class="chip-group" id="filterCats"></div>
     </div>
     <div class="field">
+      <label>Tür</label>
+      <div class="chip-group" id="filterGenres"></div>
+    </div>
+    <div class="field">
       <label>Durum</label>
       <div class="chip-group" id="filterStatus"></div>
     </div>
     <div class="field">
       <label>Öncelik</label>
       <div class="chip-group" id="filterPriority"></div>
+    </div>
+    <div class="field">
+      <label>Minimum Puan</label>
+      <div class="range-row">
+        <input type="range" id="filterPuan" min="1" max="10" value="1">
+        <span class="range-val" id="filterPuanVal">⭐ 1+</span>
+      </div>
     </div>
     <div class="filter-actions">
       <button type="button" class="btn btn-ghost" id="clearFiltersBtn">Temizle</button>
@@ -300,19 +315,29 @@ const CATS = [
   {n:"Ekstra 5", c:"#8c8c99"}, {n:"Ekstra 6", c:"#8c8c99"}, {n:"Ekstra 7", c:"#8c8c99"},
   {n:"Ekstra 8", c:"#8c8c99"}, {n:"Ekstra 9", c:"#8c8c99"}, {n:"Ekstra 10", c:"#8c8c99"},
 ];
+
+const GENRES = [
+  "Aksiyon", "Animasyon", "Belgesel", "Bilim Kurgu", "Biyografi", 
+  "Dram", "Fantastik", "Gerilim", "Gizem", "Komedi", "Korku", 
+  "Macera", "Müzikal", "Polisiye", "Psikolojik", "Romantik", 
+  "Savaş", "Suç", "Tarih", "Western", "Çizgi Roman"
+];
+
 const STATUSES = [
   {n:"İzlenecek", c:"#5ec8f2"}, {n:"Devam Ediyor", c:"#ffcb5e"},
   {n:"Bitti", c:"#6fcf97"}, {n:"Yarıda Bırakıldı", c:"#f27171"}, {n:"Askıda", c:"#c792ea"},
 ];
+
 const PRIORITIES = [
   {n:"Düşük", c:"#6fcf97"}, {n:"Orta", c:"#ffcb5e"}, {n:"Yüksek", c:"#f27171"},
 ];
+
 const byName = (arr, n) => arr.find(x => x.n === n) || {n, c:"#8c8c99"};
 const STORAGE_KEY = "entries";
 
 let entries = [];
 let editingId = null;
-let filters = { cats: new Set(), status: new Set(), prio: new Set() };
+let filters = { cats: new Set(), genres: new Set(), status: new Set(), prio: new Set(), minPuan: 1 };
 let hasStorage = !!(window.storage && window.storage.get);
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -334,8 +359,6 @@ async function loadEntries(){
       await persist();
     }
   } else {
-    // Standalone mode (opened directly in Safari / added to Home Screen):
-    // use the browser's own local storage so data survives between opens.
     try{
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if(raw === null){
@@ -354,11 +377,11 @@ async function loadEntries(){
 function seedExample(){
   return [{
     id: uid(), kategori:"Anime", tur:"Aksiyon",
-    baslik:"Attack on Titan - Final Sezon Klip",
+    isim:"Attack on Titan",
     link:"https://www.instagram.com/reel/ornek12345/",
     durum:"Devam Ediyor", oncelik:"Yüksek", puan:8,
     not:"Ana karakterin son sahnesi çok etkileyiciydi, unutmadan izlemeliyim.",
-    createdAt: Date.now(), sample:true
+    createdAt: Date.now()
   }];
 }
 
@@ -407,8 +430,10 @@ function renderStats(){
 
 function passesFilters(e){
   if(filters.cats.size && !filters.cats.has(e.kategori)) return false;
+  if(filters.genres.size && !filters.genres.has(e.tur)) return false;
   if(filters.status.size && !filters.status.has(e.durum)) return false;
   if(filters.prio.size && !filters.prio.has(e.oncelik)) return false;
+  if(Number(e.puan || 0) < filters.minPuan) return false;
   return true;
 }
 
@@ -419,7 +444,7 @@ function render(){
   document.getElementById('resultCount').textContent = visible.length !== entries.length
     ? `${visible.length}/${entries.length}` : '';
 
-  const activeFilters = filters.cats.size + filters.status.size + filters.prio.size;
+  const activeFilters = filters.cats.size + filters.genres.size + filters.status.size + filters.prio.size + (filters.minPuan > 1 ? 1 : 0);
   const fc = document.getElementById('filterCount');
   document.getElementById('filterBtn').classList.toggle('active', activeFilters>0);
   fc.style.display = activeFilters ? 'flex' : 'none';
@@ -428,14 +453,13 @@ function render(){
   if(!visible.length){
     list.innerHTML = entries.length
       ? `<div class="empty"><span class="emoji">🔍</span><h3>Sonuç yok</h3><p>Bu filtrelere uyan kayıt bulunamadı.</p></div>`
-      : `<div class="empty"><span class="emoji">🎬</span><h3>Henüz kayıt yok</h3><p>Sağ alttaki + butonuna dokunup ilk reels'ini ekle.</p></div>`;
+      : `<div class="empty"><span class="emoji">🎬</span><h3>Henüz kayıt yok</h3><p>Sağ alttaki + butonuna dokunup ilk kaydını ekle.</p></div>`;
     return;
   }
 
   list.innerHTML = visible.map(e => {
     const cat = byName(CATS, e.kategori);
     const st = byName(STATUSES, e.durum);
-    const pr = byName(PRIORITIES, e.oncelik);
     const prioFlag = e.oncelik === 'Yüksek' ? '<span class="prio-flag">🔥</span>' : '';
     return `
     <div class="card" style="--card-accent:${st.c}" data-id="${e.id}">
@@ -444,7 +468,7 @@ function render(){
         <span class="spacer"></span>
         ${prioFlag}
       </div>
-      <div class="card-title">${escapeHtml(e.baslik) || 'İsimsiz kayıt'}</div>
+      <div class="card-title">${escapeHtml(e.isim || e.baslik) || 'İsimsiz Kayıt'}</div>
       <div class="card-meta"><span class="stars">⭐ ${e.puan}/10</span></div>
       ${e.not ? `<div class="card-note">${escapeHtml(e.not)}</div>` : ''}
       <div class="card-bottom">
@@ -466,28 +490,59 @@ function escapeAttr(s){ return escapeHtml(s); }
 
 function fillSelect(sel, items, withPlaceholder){
   sel.innerHTML = (withPlaceholder ? `<option value="">Seç...</option>` : '') +
-    items.map(i => `<option value="${i.n}">${i.n}</option>`).join('');
+    items.map(i => `<option value="${i.n || i}">${i.n || i}</option>`).join('');
 }
+
 fillSelect(document.getElementById('f_kategori'), CATS, true);
 fillSelect(document.getElementById('f_durum'), STATUSES, true);
 fillSelect(document.getElementById('f_oncelik'), PRIORITIES, true);
+
+// Tür seçim kutusunu doldur + "Diğer" seçeneği
+const genreSel = document.getElementById('f_tur_select');
+genreSel.innerHTML = `<option value="">Seç...</option>` + 
+  GENRES.map(g => `<option value="${g}">${g}</option>`).join('') +
+  `<option value="__CUSTOM__">✏️ Diğer (Kendim Yazacağım)</option>`;
+
+genreSel.addEventListener('change', () => {
+  const customGroup = document.getElementById('customTurGroup');
+  if(genreSel.value === '__CUSTOM__'){
+    customGroup.style.display = 'block';
+  } else {
+    customGroup.style.display = 'none';
+  }
+});
 
 const puanInput = document.getElementById('f_puan');
 const puanVal = document.getElementById('f_puanVal');
 puanInput.addEventListener('input', () => puanVal.textContent = `⭐ ${puanInput.value}`);
 
+const filterPuanInput = document.getElementById('filterPuan');
+const filterPuanVal = document.getElementById('filterPuanVal');
+filterPuanInput.addEventListener('input', () => filterPuanVal.textContent = `⭐ ${filterPuanInput.value}+`);
+
 function openForm(id){
   editingId = id || null;
   const form = document.getElementById('entryForm');
   form.reset();
+  document.getElementById('customTurGroup').style.display = 'none';
   document.getElementById('deleteBtn').style.display = editingId ? 'block' : 'none';
   document.getElementById('formTitle').textContent = editingId ? 'Kaydı düzenle' : 'Yeni kayıt';
 
   if(editingId){
     const e = entries.find(x => x.id === editingId);
     document.getElementById('f_kategori').value = e.kategori || '';
-    document.getElementById('f_tur').value = e.tur || '';
-    document.getElementById('f_baslik').value = e.baslik || '';
+    document.getElementById('f_isim').value = e.isim || e.baslik || '';
+    
+    if(e.tur && GENRES.includes(e.tur)){
+      genreSel.value = e.tur;
+    } else if(e.tur) {
+      genreSel.value = '__CUSTOM__';
+      document.getElementById('customTurGroup').style.display = 'block';
+      document.getElementById('f_tur_custom').value = e.tur;
+    } else {
+      genreSel.value = '';
+    }
+
     document.getElementById('f_link').value = e.link || '';
     document.getElementById('f_durum').value = e.durum || '';
     document.getElementById('f_oncelik').value = e.oncelik || '';
@@ -499,6 +554,7 @@ function openForm(id){
   puanVal.textContent = `⭐ ${puanInput.value}`;
   document.getElementById('formOverlay').classList.add('open');
 }
+
 function closeForm(){ document.getElementById('formOverlay').classList.remove('open'); editingId = null; }
 
 document.getElementById('addBtn').addEventListener('click', () => openForm(null));
@@ -510,12 +566,22 @@ document.getElementById('entryForm').addEventListener('submit', async e => {
   const kategori = document.getElementById('f_kategori').value;
   const durum = document.getElementById('f_durum').value;
   const oncelik = document.getElementById('f_oncelik').value;
-  if(!kategori || !durum || !oncelik){ showToast('Kategori, durum ve öncelik seçmelisin'); return; }
+  const isim = document.getElementById('f_isim').value.trim();
+
+  if(!kategori || !durum || !oncelik || !isim){ 
+    showToast('Lütfen gerekli alanları doldurun'); 
+    return; 
+  }
+
+  let finalTur = genreSel.value;
+  if(finalTur === '__CUSTOM__'){
+    finalTur = document.getElementById('f_tur_custom').value.trim();
+  }
 
   const data = {
     kategori,
-    tur: document.getElementById('f_tur').value.trim(),
-    baslik: document.getElementById('f_baslik').value.trim(),
+    isim,
+    tur: finalTur,
     link: document.getElementById('f_link').value.trim(),
     durum,
     oncelik,
@@ -545,9 +611,12 @@ document.getElementById('deleteBtn').addEventListener('click', async () => {
 // ---- filter sheet ----
 function buildFilterChips(){
   const mk = (container, items, set) => {
-    container.innerHTML = items.map(i => `
-      <div class="chip" data-n="${i.n}"><span class="swatch" style="background:${i.c}"></span>${i.n}</div>
-    `).join('');
+    container.innerHTML = items.map(i => {
+      const val = i.n || i;
+      const color = i.c || '#8c8c99';
+      return `<div class="chip" data-n="${val}"><span class="swatch" style="background:${color}"></span>${val}</div>`;
+    }).join('');
+
     container.querySelectorAll('.chip').forEach(chip => {
       if(set.has(chip.dataset.n)) chip.classList.add('active');
       chip.addEventListener('click', () => {
@@ -556,21 +625,36 @@ function buildFilterChips(){
       });
     });
   };
+
+  // Tüm mevcut kayıtlı türleri dinamik olarak toplama (Ekstra yazılan türler de filtrede çıksın diye)
+  const allUsedGenres = Array.from(new Set([...GENRES, ...entries.map(e => e.tur).filter(Boolean)]));
+
   mk(document.getElementById('filterCats'), CATS, filters.cats);
+  mk(document.getElementById('filterGenres'), allUsedGenres, filters.genres);
   mk(document.getElementById('filterStatus'), STATUSES, filters.status);
   mk(document.getElementById('filterPriority'), PRIORITIES, filters.prio);
+  
+  filterPuanInput.value = filters.minPuan;
+  filterPuanVal.textContent = `⭐ ${filters.minPuan}+`;
 }
+
 document.getElementById('filterBtn').addEventListener('click', () => {
   buildFilterChips();
   document.getElementById('filterOverlay').classList.add('open');
 });
-document.getElementById('filterOverlay').addEventListener('click', e => { if(e.target.id==='filterOverlay') document.getElementById('filterOverlay').classList.remove('open'); });
+
+document.getElementById('filterOverlay').addEventListener('click', e => { 
+  if(e.target.id==='filterOverlay') document.getElementById('filterOverlay').classList.remove('open'); 
+});
+
 document.getElementById('applyFiltersBtn').addEventListener('click', () => {
+  filters.minPuan = Number(filterPuanInput.value);
   document.getElementById('filterOverlay').classList.remove('open');
   render();
 });
+
 document.getElementById('clearFiltersBtn').addEventListener('click', () => {
-  filters = { cats:new Set(), status:new Set(), prio:new Set() };
+  filters = { cats:new Set(), genres:new Set(), status:new Set(), prio:new Set(), minPuan: 1 };
   buildFilterChips();
   render();
 });
