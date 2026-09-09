@@ -140,6 +140,14 @@
   .search-item:last-child{border-bottom:none;}
   .search-item img{width:32px; height:48px; object-fit:cover; border-radius:4px; background:var(--surface);}
 
+  .input-with-btn { display: flex; gap: 6px; }
+  .input-with-btn input { flex: 1; }
+  .btn-inline {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    padding: 0 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600;
+    cursor: pointer; white-space: nowrap; display: flex; align-items: center; justify-content: center;
+  }
+
   .fab{
     position:fixed; right:18px; bottom:calc(20px + env(safe-area-inset-bottom));
     width:56px; height:56px; border-radius:50%;
@@ -223,8 +231,11 @@
         <div class="search-results" id="searchResults"></div>
       </div>
       <div class="field">
-        <label for="f_poster_url">Afiş URL (Otomatik Dolar)</label>
-        <input type="url" id="f_poster_url" placeholder="Görsel bağlantısı otomatik çekilir...">
+        <label for="f_poster_url">Afiş URL (Otomatik / Manuel)</label>
+        <div class="input-with-btn">
+          <input type="url" id="f_poster_url" placeholder="Görsel bağlantısı...">
+          <button type="button" class="btn-inline" id="googleSearchBtn">🔎 Google'da Bul</button>
+        </div>
       </div>
       <div class="field">
         <label for="f_tur_select">Tür</label>
@@ -304,7 +315,7 @@
 
 <script>
 const TMDB_API_KEY = "3fd2be6f0c70a2a598f084dd1fb0fe19";
-const OMDB_API_KEY = "trilogy"; // Yedek servis anahtarı
+const OMDB_API_KEY = "trilogy";
 
 const CATS = [
   {n:"Film", c:"#ff8fa3"}, {n:"Dizi", c:"#8fb8ff"}, {n:"Anime", c:"#7fe0c0"},
@@ -468,7 +479,7 @@ genreSel.addEventListener('change', () => {
   document.getElementById('customTurGroup').style.display = genreSel.value === '__CUSTOM__' ? 'block' : 'none';
 });
 
-// Üçlü Otomatik Afiş Servisi (TMDB -> iTunes -> OMDb)
+// 4 Katmanlı Akıllı Afiş Arama Servisi (iTunes -> TMDB -> Wikipedia -> OMDb)
 const isimInput = document.getElementById('f_isim');
 const searchResults = document.getElementById('searchResults');
 const posterInput = document.getElementById('f_poster_url');
@@ -477,7 +488,18 @@ let searchTimeout = null;
 async function autoFetchPoster(queryName) {
   if (!queryName || queryName.length < 2) return '';
 
-  // 1. DENE: TMDB
+  // 1. iTunes API
+  try {
+    const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(queryName)}&limit=1`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.results && data.results.length > 0 && data.results[0].artworkUrl100) {
+        return data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
+      }
+    }
+  } catch (err) {}
+
+  // 2. TMDB API
   try {
     const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=tr-TR&query=${encodeURIComponent(queryName)}`);
     if (res.ok) {
@@ -487,18 +509,16 @@ async function autoFetchPoster(queryName) {
     }
   } catch (err) {}
 
-  // 2. DENE: iTunes API (Kesinlikle kısıtlamasız servis)
+  // 3. WIKIPEDIA API (Sınırsız Türkçe/Global Afiş Servisi)
   try {
-    const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(queryName)}&entity=movie&limit=1`);
+    const res = await fetch(`https://tr.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(queryName)}`);
     if (res.ok) {
       const data = await res.json();
-      if (data.results && data.results.length > 0 && data.results[0].artworkUrl100) {
-        return data.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-      }
+      if (data.thumbnail && data.thumbnail.source) return data.thumbnail.source;
     }
   } catch (err) {}
 
-  // 3. DENE: OMDb API
+  // 4. OMDb API
   try {
     const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(queryName)}&apikey=${OMDB_API_KEY}`);
     if (res.ok) {
@@ -509,6 +529,16 @@ async function autoFetchPoster(queryName) {
 
   return '';
 }
+
+// Google Görsellerde Tek Tıkla Arama Butonu
+document.getElementById('googleSearchBtn').addEventListener('click', () => {
+  const query = isimInput.value.trim();
+  if (!query) {
+    showToast("Önce bir isim yazın!");
+    return;
+  }
+  window.open(`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query + ' poster afiş')}`, '_blank');
+});
 
 isimInput.addEventListener('input', () => {
   clearTimeout(searchTimeout);
@@ -521,13 +551,13 @@ isimInput.addEventListener('input', () => {
 
   searchTimeout = setTimeout(async () => {
     try {
-      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=movie&limit=5`);
+      const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&limit=5`);
       if (!res.ok) return;
       const data = await res.json();
       
       if (data.results && data.results.length > 0) {
         searchResults.innerHTML = data.results.map(item => {
-          const title = item.trackName;
+          const title = item.trackName || item.collectionName;
           if(!title) return '';
           const year = (item.releaseDate || '').substring(0, 4);
           const poster = item.artworkUrl100 ? item.artworkUrl100.replace('100x100bb', '300x300bb') : '';
